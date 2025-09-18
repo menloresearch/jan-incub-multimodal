@@ -3,7 +3,6 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from ..dependencies import (
     WhisperModelManagerDependency,
     AudioFileDependency,
-    ConfigDependency,
 )
 from ..config import get_enabled_models
 
@@ -27,7 +26,6 @@ def get_enabled_model_names():
 async def transcribe_file(
     request: Request,
     model_manager: WhisperModelManagerDependency,
-    config: ConfigDependency,
     audio: AudioFileDependency,
     model: Annotated[str, Form(description="Model to use for transcription")] = "turbo",
     language: Annotated[
@@ -59,9 +57,12 @@ async def transcribe_file(
     form_data = await request.form()
     timestamp_granularities_from_form = form_data.getlist("timestamp_granularities[]")
     if timestamp_granularities_from_form:
-        timestamp_granularities = (
-            timestamp_granularities_from_form  # Use array from curl
-        )
+        # Convert form strings to proper TimestampGranularity values
+        timestamp_granularities = [
+            item
+            for item in timestamp_granularities_from_form
+            if item in ["word", "segment"]
+        ]
 
     # Determine if word timestamps are needed
     needs_word_timestamps = "word" in timestamp_granularities
@@ -117,7 +118,6 @@ async def transcribe_file(
             for i, segment in enumerate(segments_list):
                 segment_data = {
                     "id": i,
-                    "seek": 0,
                     "start": segment.start,
                     "end": segment.end,
                     "text": segment.text,
