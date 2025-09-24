@@ -13,9 +13,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Create and activate a virtual environment
 
 ```bash
-uv venv --python=3.11 --managed-python
+uv venv --python=3.12 --managed-python
 source .venv/bin/activate
-
 ```
 
 Setup pre-commit hooks
