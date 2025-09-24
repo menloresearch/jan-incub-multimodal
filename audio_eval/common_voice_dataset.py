@@ -39,7 +39,9 @@ class CommonVoiceDataset:
         if default_split not in self._valid_splits:
             self._valid_splits.append(default_split)
 
-        print(f"Found {len(self.languages)} languages: {self.languages[:5]}...")
+        print(f"Found {len(self.languages)} languages:")
+        for lang in self.languages:
+            print(f"  - {lang}")
 
     # Private methods -----------------------------------------------------
     def __validate_language(self, lang_code: str) -> None:

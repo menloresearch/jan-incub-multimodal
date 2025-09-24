@@ -19,7 +19,7 @@ try:  # Optional progress bar support
 except ImportError:  # pragma: no cover - tqdm is optional
     tqdm = None
 
-ServiceFuncMap = Mapping[str, Callable[[str], str]]
+ServiceFuncMap = Mapping[str, Callable[[str, Optional[str]], str]]
 NormalizerResolver = Callable[[str], Normalizer]
 
 WER_METRIC = evaluate.load("wer")
@@ -96,6 +96,7 @@ def _compute_wer(references: List[str], predictions: List[str]) -> float:
 def _transcribe_with_retry(
     service_name: str,
     audio_path: str,
+    language: Optional[str],
     transcribe_func,
     max_retries: int,
     logger: logging.Logger,
@@ -106,7 +107,7 @@ def _transcribe_with_retry(
 
     for attempt in range(max_retries):
         try:
-            transcription = transcribe_func(audio_path)
+            transcription = transcribe_func(audio_path, language)
             end_time = time.time()
             return {
                 "service": service_name,
@@ -233,6 +234,7 @@ def run_wer_evaluation(
                 result = _transcribe_with_retry(
                     service_name,
                     sample["audio_path"],
+                    lang_code,
                     transcribe_func,
                     max_retries,
                     logger,
@@ -376,6 +378,7 @@ def run_wer_evaluation_parallel(
                         _transcribe_with_retry,
                         service_name,
                         audio_path,
+                        lang_code,
                         service_funcs[service_name],
                         max_retries,
                         logger,

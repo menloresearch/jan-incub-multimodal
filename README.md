@@ -60,7 +60,7 @@ Example run (progress bars + transcript dump enabled by default):
 scripts/run_wer_eval.py \
   --dataset-path "$CV22_PATH" \
   --preset smoke \
-  --services menlo_large-v3 vllm_openai-whisper-large-v3 speechmatics_en \
+  --services menlo_large-v3 vllm_openai-whisper-large-v3 speechmatics \
   --n-samples 5
 ```
 

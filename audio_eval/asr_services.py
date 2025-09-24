@@ -7,15 +7,68 @@ import logging
 import os
 import time
 from functools import partial
-from typing import Callable, Dict, Iterable, List, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 DEFAULT_MENLO_BASE_URL = os.getenv("MENLO_BASE_URL", "http://localhost:8000/v1")
 DEFAULT_MENLO_API_KEY = os.getenv("MENLO_API_KEY", "dummy")
 DEFAULT_VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://0.0.0.0:3349/v1")
 DEFAULT_VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
 
-ServiceFunction = Callable[[str], str]
+ServiceFunction = Callable[[str, Optional[str]], str]
 ServiceModelSpec = Tuple[str, str]
+
+
+ISO2_ALIASES = {
+    "zh-cn": "zh",
+    "zh_hans": "zh",
+    "zh-hans": "zh",
+    "zh-hant": "zh",
+    "zh_tw": "zh",
+    "zh-tw": "zh",
+    "zh-hk": "zh",
+    "pt-br": "pt",
+    "pt_br": "pt",
+    "en-us": "en",
+    "en-gb": "en",
+    "ja-jp": "ja",
+}
+
+ELEVENLABS_LANG_MAP = {
+    "en": "eng",
+    "zh": "zho",
+    "ja": "jpn",
+    "fr": "fra",
+    "de": "deu",
+    "es": "spa",
+    "ru": "rus",
+    "it": "ita",
+    "pt": "por",
+    "ko": "kor",
+    "pl": "pol",
+    "sv": "swe",
+    "no": "nor",
+    "nl": "nld",
+    "hi": "hin",
+    "ar": "ara",
+}
+
+SPEECHMATICS_LANG_MAP = {
+    "en": {"language": "en"},
+    "zh": {"language": "cmn"},
+    "cmn": {"language": "cmn"},
+}
+
+
+def _normalize_iso2(language: Optional[str]) -> Optional[str]:
+    if not language:
+        return None
+    normalized = language.lower().replace("_", "-")
+    normalized = ISO2_ALIASES.get(normalized, normalized)
+    if "-" in normalized:
+        normalized = normalized.split("-")[0]
+    if len(normalized) == 2:
+        return normalized
+    return None
 
 
 def _suppress_logs(*names: str, level: int = logging.WARNING) -> None:
@@ -23,7 +76,7 @@ def _suppress_logs(*names: str, level: int = logging.WARNING) -> None:
         logging.getLogger(name).setLevel(level)
 
 
-def transcribe_menlo(audio_path: str, model: str = "large-v3") -> str:
+def transcribe_menlo(audio_path: str, model: str = "large-v3", language: Optional[str] = None) -> str:
     """Transcribe audio using a Menlo-hosted OpenAI-compatible endpoint."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
@@ -37,6 +90,7 @@ def transcribe_menlo(audio_path: str, model: str = "large-v3") -> str:
             model=model,
             file=audio_file,
             response_format="text",
+            language=_normalize_iso2(language),
         )
     return _extract_openai_text(transcription)
 
@@ -53,7 +107,7 @@ def _extract_openai_text(payload) -> str:
     return str(payload)
 
 
-def transcribe_vllm(audio_path: str, model: str = "large-v3") -> str:
+def transcribe_vllm(audio_path: str, model: str = "large-v3", language: Optional[str] = None) -> str:
     """Transcribe audio using a local vLLM Whisper service."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
@@ -67,11 +121,12 @@ def transcribe_vllm(audio_path: str, model: str = "large-v3") -> str:
             model=model,
             file=audio_file,
             response_format="text",
+            language=_normalize_iso2(language),
         )
     return _extract_openai_text(transcription)
 
 
-def transcribe_openai(audio_path: str, model: str = "gpt-4o-transcribe") -> str:
+def transcribe_openai(audio_path: str, model: str = "gpt-4o-transcribe", language: Optional[str] = None) -> str:
     """Transcribe audio using OpenAI's hosted models."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
@@ -81,11 +136,15 @@ def transcribe_openai(audio_path: str, model: str = "gpt-4o-transcribe") -> str:
 
     client = OpenAI()
     with open(audio_path, "rb") as audio_file:
-        transcription = client.audio.transcriptions.create(model=model, file=audio_file)
+        transcription = client.audio.transcriptions.create(
+            model=model,
+            file=audio_file,
+            language=_normalize_iso2(language),
+        )
     return transcription.text
 
 
-def transcribe_groq(audio_path: str, model: str = "whisper-large-v3-turbo") -> str:
+def transcribe_groq(audio_path: str, model: str = "whisper-large-v3-turbo", language: Optional[str] = None) -> str:
     """Transcribe audio using Groq's Whisper endpoints."""
     _suppress_logs("httpx", "urllib3", "requests", "groq", level=logging.ERROR)
     try:
@@ -99,11 +158,12 @@ def transcribe_groq(audio_path: str, model: str = "whisper-large-v3-turbo") -> s
             file=(os.path.basename(audio_path), file_handle.read()),
             model=model,
             response_format="verbose_json",
+            language=_normalize_iso2(language),
         )
     return transcription.text
 
 
-def transcribe_elevenlabs(audio_path: str, model_id: str = "scribe_v1") -> str:
+def transcribe_elevenlabs(audio_path: str, model_id: str = "scribe_v1", language: Optional[str] = None) -> str:
     """Transcribe audio using ElevenLabs."""
     _suppress_logs("httpx", "elevenlabs", level=logging.WARNING)
     try:
@@ -113,10 +173,14 @@ def transcribe_elevenlabs(audio_path: str, model_id: str = "scribe_v1") -> str:
 
     client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     with open(audio_path, "rb") as audio_file:
+        lang_code = None
+        normalized = _normalize_iso2(language)
+        if normalized:
+            lang_code = ELEVENLABS_LANG_MAP.get(normalized)
         transcript = client.speech_to_text.convert(
             file=audio_file,
             model_id=model_id,
-            language_code="en",
+            language_code=lang_code,
         )
     return transcript.text
 
@@ -135,13 +199,29 @@ def transcribe_speechmatics(audio_path: str, language: str = "en") -> str:
         auth_token=os.getenv("SPEECHMATICS_API_KEY"),
     )
 
+    normalized = _normalize_iso2(language) or language
+    lang_config = SPEECHMATICS_LANG_MAP.get(normalized, {"language": normalized})
+
+    # Merge operating point/domain hints if provided via environment variables
+    operating_point = os.getenv("SPEECHMATICS_OPERATING_POINT")
+    domain = os.getenv("SPEECHMATICS_DOMAIN")
+
+    transcription_kwargs = dict(lang_config)
+    if operating_point:
+        transcription_kwargs["operating_point"] = operating_point
+    if domain:
+        transcription_kwargs["domain"] = domain
+
     with BatchClient(settings) as client:
-        job_id = client.submit_job(audio_path, BatchTranscriptionConfig(language=language))
+        job_id = client.submit_job(
+            audio_path,
+            BatchTranscriptionConfig(**transcription_kwargs),
+        )
         transcript = client.wait_for_completion(job_id, transcription_format="txt")
     return transcript
 
 
-def transcribe_gladia(audio_path: str) -> str:
+def transcribe_gladia(audio_path: str, language: Optional[str] = None) -> str:
     """Transcribe audio using Gladia's API."""
     _suppress_logs("requests", "urllib3", level=logging.WARNING)
     try:
@@ -171,6 +251,7 @@ def transcribe_gladia(audio_path: str) -> str:
     job_resp.raise_for_status()
     result_url = job_resp.json()["result_url"]
 
+    poll_interval = 0.5
     while True:
         poll_resp = requests.get(result_url, headers=headers, timeout=60)
         poll_resp.raise_for_status()
@@ -180,7 +261,7 @@ def transcribe_gladia(audio_path: str) -> str:
             return payload["result"]["transcription"]["full_transcript"]
         if status == "error":
             raise RuntimeError(f"Gladia transcription failed: {payload}")
-        time.sleep(2)
+        time.sleep(poll_interval)
 
 
 DEFAULT_SERVICE_MODELS: Sequence[ServiceModelSpec] = (
@@ -203,20 +284,37 @@ def build_service_function_map(service_models: Iterable[ServiceModelSpec]) -> Di
     for service, model in service_models:
         safe_model = model.replace("/", "-")
         key = f"{service}_{safe_model}"
-        if service == "menlo":
-            service_funcs[key] = partial(transcribe_menlo, model=model)
-        elif service == "vllm":
-            service_funcs[key] = partial(transcribe_vllm, model=model)
-        elif service == "openai":
-            service_funcs[key] = partial(transcribe_openai, model=model)
-        elif service == "groq":
-            service_funcs[key] = partial(transcribe_groq, model=model)
-        elif service == "elevenlabs":
-            service_funcs[key] = partial(transcribe_elevenlabs, model_id=model)
+        if service == "speechmatics" and model == "en":
+            key = service
         elif service == "speechmatics":
-            service_funcs[key] = partial(transcribe_speechmatics, language=model)
+            key = f"{service}_{safe_model}"
+
+        if service == "menlo":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_menlo(
+                audio_path, model=_model, language=lang
+            )
+        elif service == "vllm":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_vllm(
+                audio_path, model=_model, language=lang
+            )
+        elif service == "openai":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_openai(
+                audio_path, model=_model, language=lang
+            )
+        elif service == "groq":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_groq(
+                audio_path, model=_model, language=lang
+            )
+        elif service == "elevenlabs":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_elevenlabs(
+                audio_path, model_id=_model, language=lang
+            )
+        elif service == "speechmatics":
+            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_speechmatics(
+                audio_path, language=lang or _model
+            )
         elif service == "gladia":
-            service_funcs[key] = transcribe_gladia
+            service_funcs[key] = lambda audio_path, lang: transcribe_gladia(audio_path, language=lang)
         else:  # pragma: no cover - defensive branch
             raise ValueError(f"Unsupported service '{service}'")
     return service_funcs
