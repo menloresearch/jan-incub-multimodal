@@ -1,3 +1,6 @@
+> [!WARNING]
+> This is purely experimental code. Use at your own risk.
+>
 # Jan Incubator Audio
 
 This repository is for POC of `audio` and `realtime` endpoints.
