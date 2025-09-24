@@ -12,3 +12,8 @@ faster-whisper>=0.10.0
 python-multipart>=0.0.6
 pytest
 ruff
+python-dotenv
+tqdm
+evaluate
+speechmatics-python
+vllm[audio]
