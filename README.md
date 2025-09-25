@@ -1,7 +1,8 @@
+# Jan Incubator Audio
+
 > [!WARNING]
 > This is purely experimental code. Use at your own risk.
 >
-# Jan Incubator Audio
 
 This repository is for POC of `audio` and `realtime` endpoints.
 
@@ -49,10 +50,11 @@ scripts/serve_whisper.sh
 ## Audio Evaluation Pipeline
 
 - Core modules live under `audio_eval/`:
-    - `common_voice_dataset.py` handles dataset sampling (defaults to `test_100` split).
-    - `asr_services.py` wraps each ASR provider.
-    - `text_normalizer_utils.py` wires the multilingual normalizers.
-    - `wer_evaluator.py` coordinates transcription, logging, and WER scoring (HF `evaluate` + optional `tqdm`).
+  - `common_voice_dataset.py` handles dataset sampling (defaults to `test_100` split).
+  - `asr_services.py` wraps each ASR provider.
+  - `text_normalizer_utils.py` wires the multilingual normalizers.
+  - `wer_evaluator.py` coordinates transcription, logging, and WER scoring
+    (HF `evaluate` + optional `tqdm`).
 - CLI entry point: `scripts/run_wer_eval.py`
 - Quick service checks: `scripts/test_transcribe_vllm.py` and `scripts/test_transcribe_speechmatics.py`.
 
@@ -62,12 +64,13 @@ Example run (progress bars + transcript dump enabled by default):
 scripts/run_wer_eval.py \
   --dataset-path "$CV22_PATH" \
   --preset smoke \
-  --services menlo_large-v3 vllm_openai-whisper-large-v3 speechmatics \
+  --services fasterwhisper_whisper-large-v3 \
+    vllm_openai-whisper-large-v3 speechmatics \
   --n-samples 5
 ```
 
-To resume an interrupted run, point to the previous checkpoint (and optionally reuse the
-same results/log paths):
+To resume an interrupted run, point to the previous checkpoint (and optionally
+reuse the same results/log paths):
 
 ```bash
 scripts/run_wer_eval.py \
@@ -88,5 +91,6 @@ itself derived from the Whisper repository. We appreciate the maintainers for re
 those utilities under the Apache 2.0 license.
 
 We also rely on community implementations of audio models such as
-[faster-whisper](https://github.com/guillaumekln/faster-whisper), [vllm](https://github.com/vllm-project/vllm) and NVIDIA’s
+[faster-whisper](https://github.com/guillaumekln/faster-whisper),
+[vllm](https://github.com/vllm-project/vllm), and NVIDIA’s
 [NeMo](https://github.com/NVIDIA/NeMo) framework, which power parts of our backend.
