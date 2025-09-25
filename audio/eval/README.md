@@ -33,3 +33,5 @@ python scripts/run_wer_eval.py \
 - Example notebooks are under `notebooks/` for exploratory analysis.
 - Results, logs, and transcript dumps default to the project-level
   `results/` and `logs/` directories.
+- To recompute metrics offline from a transcript dump, run
+  `python scripts/score_transcripts.py path/to/transcripts.jsonl`.
