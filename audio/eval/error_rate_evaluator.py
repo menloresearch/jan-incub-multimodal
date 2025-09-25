@@ -167,6 +167,9 @@ def run_wer_evaluation(
     normalizer_resolver: Optional[NormalizerResolver] = None,
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
+    success_records: Optional[
+        Mapping[tuple[str, str], Mapping[int, dict[str, Any]]]
+    ] = None,
 ) -> dict[str, dict[str, Any]]:
     """Run a sequential WER/CER evaluation across services."""
 
@@ -228,6 +231,12 @@ def run_wer_evaluation(
             timings: list[float] = []
             failures = 0
 
+            cached_success = (
+                success_records.get((lang_code, service_name))
+                if success_records
+                else None
+            )
+
             rows = list(samples_df.iterrows())
             for idx, (_, row) in enumerate(
                 _progress_iter(
@@ -240,7 +249,20 @@ def run_wer_evaluation(
                 sample = dataset.get_sample_with_audio(lang_code, row)
                 raw_text = sample["text"]
                 normalized_reference = normalizer(raw_text)
-                references.append(normalized_reference)
+
+                if cached_success and idx in cached_success:
+                    cached = cached_success[idx]
+                    references.append(
+                        cached.get("normalized_reference", normalized_reference)
+                    )
+                    predictions.append(
+                        cached.get(
+                            "normalized_transcription", cached.get("transcription", "")
+                        )
+                    )
+                    timings.append(cached.get("timing", 0.0))
+                    _record_transcript(dump_path, cached)
+                    continue
 
                 result = _transcribe_with_retry(
                     service_name,
@@ -252,14 +274,15 @@ def run_wer_evaluation(
                     lang_code,
                     idx,
                 )
-                timings.append(result["timing"])
-                transcription = result["transcription"]
-                normalized_prediction = (
-                    normalizer(transcription) if transcription else ""
-                )
-                predictions.append(normalized_prediction)
-                if not result.get("success", True):
+                if result.get("success", True):
+                    timings.append(result["timing"])
+                    transcription = result["transcription"]
+                    normalized_prediction = normalizer(transcription)
+                    predictions.append(normalized_prediction)
+                    references.append(normalized_reference)
+                else:
                     failures += 1
+                    normalized_prediction = ""
 
                 _record_transcript(
                     dump_path,
@@ -286,7 +309,10 @@ def run_wer_evaluation(
                     )
 
             lang_results[service_name] = summarize_error_rates(
-                references, predictions, timings, failures=failures
+                references,
+                predictions,
+                timings,
+                failures=failures,
             )
             completed_services.add(checkpoint_key)
 
@@ -317,6 +343,9 @@ def run_wer_evaluation_parallel(
     normalizer_resolver: Optional[NormalizerResolver] = None,
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
+    success_records: Optional[
+        Mapping[tuple[str, str], Mapping[int, dict[str, Any]]]
+    ] = None,
 ) -> dict[str, dict[str, Any]]:
     """Run a WER/CER evaluation using parallel service calls per sample."""
 
@@ -376,8 +405,15 @@ def run_wer_evaluation_parallel(
 
         all_predictions = {service: [] for service in services_to_process}
         all_timings = {service: [] for service in services_to_process}
+        all_references = {service: [] for service in services_to_process}
         failure_counts = {service: 0 for service in services_to_process}
-        all_references: list[str] = []
+
+        cached_success = {
+            service: (
+                success_records.get((lang_code, service)) if success_records else None
+            )
+            for service in services_to_process
+        }
 
         rows = list(samples_df.iterrows())
         for idx, (_, row) in enumerate(
@@ -391,38 +427,55 @@ def run_wer_evaluation_parallel(
             sample = dataset.get_sample_with_audio(lang_code, row)
             raw_text = sample["text"]
             normalized_reference = normalizer(raw_text)
-            all_references.append(normalized_reference)
             audio_path = sample["audio_path"]
 
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=max_workers
             ) as executor:
-                futures = {
-                    executor.submit(
-                        _transcribe_with_retry,
-                        service_name,
-                        audio_path,
-                        lang_code,
-                        service_funcs[service_name],
-                        max_retries,
-                        logger,
-                        lang_code,
-                        idx,
-                    ): service_name
-                    for service_name in services_to_process
-                }
+                futures = {}
+                for service_name in services_to_process:
+                    cached = cached_success.get(service_name)
+                    if cached and idx in cached:
+                        record = cached[idx]
+                        all_references[service_name].append(
+                            record.get("normalized_reference", normalized_reference)
+                        )
+                        all_predictions[service_name].append(
+                            record.get(
+                                "normalized_transcription",
+                                record.get("transcription", ""),
+                            )
+                        )
+                        all_timings[service_name].append(record.get("timing", 0.0))
+                        _record_transcript(dump_path, record)
+                        continue
+
+                    futures[
+                        executor.submit(
+                            _transcribe_with_retry,
+                            service_name,
+                            audio_path,
+                            lang_code,
+                            service_funcs[service_name],
+                            max_retries,
+                            logger,
+                            lang_code,
+                            idx,
+                        )
+                    ] = service_name
 
                 for future in concurrent.futures.as_completed(futures):
                     result = future.result()
                     service_name = result["service"]
                     transcription = result["transcription"]
-                    normalized_transcription = (
-                        normalizer(transcription) if transcription else ""
-                    )
-                    all_predictions[service_name].append(normalized_transcription)
-                    all_timings[service_name].append(result["timing"])
-                    if not result.get("success", True):
+                    if result.get("success", True):
+                        normalized_transcription = normalizer(transcription)
+                        all_references[service_name].append(normalized_reference)
+                        all_predictions[service_name].append(normalized_transcription)
+                        all_timings[service_name].append(result["timing"])
+                    else:
                         failure_counts[service_name] += 1
+                        normalized_transcription = ""
 
                     _record_transcript(
                         dump_path,
@@ -446,9 +499,10 @@ def run_wer_evaluation_parallel(
         for service_name in services_to_process:
             predictions = all_predictions[service_name]
             timings = all_timings[service_name]
+            references = all_references[service_name]
 
             lang_results[service_name] = summarize_error_rates(
-                all_references,
+                references,
                 predictions,
                 timings,
                 failures=failure_counts[service_name],

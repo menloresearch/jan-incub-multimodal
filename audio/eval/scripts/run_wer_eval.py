@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Iterable
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -148,6 +150,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="JSONL file to store raw and normalized transcripts (default: logs/transcripts_<timestamp>.jsonl)",
     )
+    parser.add_argument(
+        "--retry-transcripts",
+        type=Path,
+        help="Existing transcript JSONL to reuse successes from (outputs written to new file)",
+    )
     return parser.parse_args()
 
 
@@ -213,6 +220,38 @@ def resolve_services(args: argparse.Namespace) -> dict[str, callable]:
     return service_funcs
 
 
+def load_transcripts(path: Path) -> list[dict]:
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                records.append(json.loads(text))
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON on line {line_number} in {path}: {text}"
+                ) from exc
+    return records
+
+
+def build_success_map(
+    records: Iterable[dict],
+) -> dict[tuple[str, str], dict[int, dict]]:
+    success_map: dict[tuple[str, str], dict[int, dict]] = defaultdict(dict)
+    for record in records:
+        if not record.get("success", True):
+            continue
+        lang = record.get("lang")
+        service = record.get("service")
+        sample_index = record.get("sample_index")
+        if lang is None or service is None or sample_index is None:
+            continue
+        success_map[(lang, service)][int(sample_index)] = record
+    return success_map
+
+
 def main() -> int:
     args = parse_args()
     load_environment(args.env_file)
@@ -250,6 +289,15 @@ def main() -> int:
         DEFAULT_LOGS_DIR / f"transcripts_{timestamp}.jsonl"
     )
 
+    success_map = None
+    if args.retry_transcripts:
+        retry_records = load_transcripts(args.retry_transcripts)
+        success_map = build_success_map(retry_records)
+        if not args.dump_transcripts:
+            transcript_path = args.retry_transcripts.with_name(
+                f"{args.retry_transcripts.stem}_retry_{timestamp}.jsonl"
+            )
+
     for path in (results_path, checkpoint_path, log_path, transcript_path):
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -268,6 +316,7 @@ def main() -> int:
         normalizer_resolver=get_text_normalizer,
         transcript_dump=str(transcript_path),
         show_progress=args.show_progress,
+        success_records=success_map,
     )
 
     print("=== Evaluation Configuration ===")
