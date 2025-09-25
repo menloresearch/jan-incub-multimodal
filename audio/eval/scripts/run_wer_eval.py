@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI to run Common Voice WER evaluations outside the notebook."""
+"""CLI to run Common Voice WER/CER evaluations outside the notebook."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ PRESET_LANGUAGE_SETS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run WER evaluation across ASR services"
+        description="Run WER/CER evaluation across ASR services"
     )
     parser.add_argument(
         "--dataset-path",
@@ -294,10 +294,12 @@ def main() -> int:
         print(f"{lang}:")
         for service, metrics in lang_results.items():
             wer = metrics.get("wer", 1.0)
+            cer = metrics.get("cer")
             timing = metrics.get("timing", 0.0)
             count = metrics.get("n_samples", 0)
+            cer_summary = f", CER={cer:.4f}" if cer is not None else ""
             print(
-                f"  {service}: WER={wer:.4f}, Avg Time={timing:.2f}s, Samples={count}"
+                f"  {service}: WER={wer:.4f}{cer_summary}, Avg Time={timing:.2f}s, Samples={count}"
             )
 
     print(f"\nDone. Detailed results written to {results_path}")

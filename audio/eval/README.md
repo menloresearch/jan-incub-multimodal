@@ -1,7 +1,7 @@
 # Audio Evaluation
 
 Utilities here help benchmark speech-to-text services on Common Voice 22 and
-other datasets.
+other datasets using both word and character error rate (WER/CER).
 
 ## Quick Start
 
@@ -29,7 +29,7 @@ python scripts/run_wer_eval.py \
 ```
 
 - Core logic lives in `asr_services.py`, `common_voice_dataset.py`, and
-  `wer_evaluator.py`.
+  `wer_evaluator.py` for computing WER/CER across services.
 - Example notebooks are under `notebooks/` for exploratory analysis.
 - Results, logs, and transcript dumps default to the project-level
   `results/` and `logs/` directories.

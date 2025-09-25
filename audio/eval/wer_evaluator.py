@@ -7,7 +7,16 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+)
 
 import evaluate
 
@@ -23,6 +32,7 @@ ServiceFuncMap = Mapping[str, Callable[[str, Optional[str]], str]]
 NormalizerResolver = Callable[[str], Normalizer]
 
 WER_METRIC = evaluate.load("wer")
+CER_METRIC = evaluate.load("cer")
 
 
 def _ensure_parent(path: Path) -> None:
@@ -57,18 +67,25 @@ def _setup_logger(log_file: Path) -> logging.Logger:
 
     # Avoid attaching duplicate handlers when rerunning within notebooks.
     file_handler_exists = any(
-        isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == str(log_file)
+        isinstance(handler, logging.FileHandler)
+        and getattr(handler, "baseFilename", None) == str(log_file)
         for handler in logger.handlers
     )
     if not file_handler_exists:
         file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
         logger.addHandler(file_handler)
 
-    stream_handler_exists = any(isinstance(handler, logging.StreamHandler) for handler in logger.handlers)
+    stream_handler_exists = any(
+        isinstance(handler, logging.StreamHandler) for handler in logger.handlers
+    )
     if not stream_handler_exists:
         stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        stream_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
         logger.addHandler(stream_handler)
 
     return logger
@@ -91,6 +108,12 @@ def _compute_wer(references: List[str], predictions: List[str]) -> float:
         return 1.0
     # The HF evaluate WER matches the OpenASR reference implementation
     return float(WER_METRIC.compute(references=references, predictions=predictions))
+
+
+def _compute_cer(references: List[str], predictions: List[str]) -> float:
+    if not references or not predictions:
+        return 1.0
+    return float(CER_METRIC.compute(references=references, predictions=predictions))
 
 
 def _transcribe_with_retry(
@@ -126,7 +149,10 @@ def _transcribe_with_retry(
             )
             if attempt == max_retries - 1:
                 logger.error(
-                    "Failed to transcribe %s sample %s after %s attempts", lang_code, sample_idx, max_retries
+                    "Failed to transcribe %s sample %s after %s attempts",
+                    lang_code,
+                    sample_idx,
+                    max_retries,
                 )
                 end_time = time.time()
                 return {
@@ -162,7 +188,7 @@ def run_wer_evaluation(
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Run a sequential WER evaluation across services."""
+    """Run a sequential WER/CER evaluation across services."""
 
     log_path = Path(log_file)
     results_path = Path(results_file)
@@ -196,7 +222,9 @@ def run_wer_evaluation(
         normalizer: Normalizer = resolved_normalizer(lang_code)
         logger.info("Processing language: %s", lang_code)
 
-        samples_df = dataset.get_samples(lang_code, n_samples=n_samples, split=target_split)
+        samples_df = dataset.get_samples(
+            lang_code, n_samples=n_samples, split=target_split
+        )
         if len(samples_df) == 0:
             logger.warning("No samples found for %s", lang_code)
             continue
@@ -205,7 +233,9 @@ def run_wer_evaluation(
 
         for service_name in services:
             if service_name not in service_funcs:
-                raise KeyError(f"Service '{service_name}' missing from service_funcs mapping")
+                raise KeyError(
+                    f"Service '{service_name}' missing from service_funcs mapping"
+                )
 
             checkpoint_key = f"{lang_code}_{service_name}"
             if checkpoint_key in completed_services:
@@ -243,7 +273,9 @@ def run_wer_evaluation(
                 )
                 timings.append(result["timing"])
                 transcription = result["transcription"]
-                normalized_prediction = normalizer(transcription) if transcription else ""
+                normalized_prediction = (
+                    normalizer(transcription) if transcription else ""
+                )
                 predictions.append(normalized_prediction)
 
                 _record_transcript(
@@ -263,16 +295,28 @@ def run_wer_evaluation(
                 )
 
                 if (idx + 1) % 10 == 0:
-                    logger.info("Processed %s/%s samples for %s", idx + 1, len(samples_df), service_name)
+                    logger.info(
+                        "Processed %s/%s samples for %s",
+                        idx + 1,
+                        len(samples_df),
+                        service_name,
+                    )
 
             if predictions and references:
                 wer = _compute_wer(references, predictions)
+                cer = _compute_cer(references, predictions)
                 avg_time = sum(timings) / len(timings)
             else:
                 wer = 1.0
+                cer = 1.0
                 avg_time = 0.0
 
-            lang_results[service_name] = {"wer": wer, "timing": avg_time, "n_samples": len(predictions)}
+            lang_results[service_name] = {
+                "wer": wer,
+                "cer": cer,
+                "timing": avg_time,
+                "n_samples": len(predictions),
+            }
             completed_services.add(checkpoint_key)
 
             _save_json(checkpoint_path, {"completed": list(completed_services)})
@@ -303,7 +347,7 @@ def run_wer_evaluation_parallel(
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Run a WER evaluation using parallel service calls per sample."""
+    """Run a WER/CER evaluation using parallel service calls per sample."""
 
     log_path = Path(log_file)
     results_path = Path(results_file)
@@ -320,7 +364,9 @@ def run_wer_evaluation_parallel(
     completed_services = set(checkpoint.get("completed", []))
 
     existing_results = _load_json(results_path)
-    results: Dict[str, Dict[str, Any]] = {k: v for k, v in existing_results.items()} if existing_results else {}
+    results: Dict[str, Dict[str, Any]] = (
+        {k: v for k, v in existing_results.items()} if existing_results else {}
+    )
 
     dump_path = Path(transcript_dump) if transcript_dump else None
 
@@ -338,12 +384,16 @@ def run_wer_evaluation_parallel(
         normalizer: Normalizer = resolved_normalizer(lang_code)
         logger.info("Processing language: %s", lang_code)
 
-        samples_df = dataset.get_samples(lang_code, n_samples=n_samples, split=target_split)
+        samples_df = dataset.get_samples(
+            lang_code, n_samples=n_samples, split=target_split
+        )
         if len(samples_df) == 0:
             logger.warning("No samples found for %s", lang_code)
             continue
 
-        services_to_process = [s for s in services if f"{lang_code}_{s}" not in completed_services]
+        services_to_process = [
+            s for s in services if f"{lang_code}_{s}" not in completed_services
+        ]
         lang_results: Dict[str, Any] = results.get(lang_code, {})
 
         if not services_to_process:
@@ -372,7 +422,9 @@ def run_wer_evaluation_parallel(
             all_references.append(normalized_reference)
             audio_path = sample["audio_path"]
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
                 futures = {
                     executor.submit(
                         _transcribe_with_retry,
@@ -392,7 +444,9 @@ def run_wer_evaluation_parallel(
                     result = future.result()
                     service_name = result["service"]
                     transcription = result["transcription"]
-                    normalized_transcription = normalizer(transcription) if transcription else ""
+                    normalized_transcription = (
+                        normalizer(transcription) if transcription else ""
+                    )
                     all_predictions[service_name].append(normalized_transcription)
                     all_timings[service_name].append(result["timing"])
 
@@ -421,12 +475,19 @@ def run_wer_evaluation_parallel(
 
             if predictions and all_references:
                 wer = _compute_wer(all_references, predictions)
+                cer = _compute_cer(all_references, predictions)
                 avg_time = sum(timings) / len(timings)
             else:
                 wer = 1.0
+                cer = 1.0
                 avg_time = 0.0
 
-            lang_results[service_name] = {"wer": wer, "timing": avg_time, "n_samples": len(predictions)}
+            lang_results[service_name] = {
+                "wer": wer,
+                "cer": cer,
+                "timing": avg_time,
+                "n_samples": len(predictions),
+            }
 
             completed_services.add(f"{lang_code}_{service_name}")
             _save_json(checkpoint_path, {"completed": list(completed_services)})
