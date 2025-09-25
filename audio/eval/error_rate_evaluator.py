@@ -126,8 +126,12 @@ def _transcribe_with_retry(
                     sample_idx,
                     max_retries,
                 )
+                detail = getattr(exc, "response", None)
+                info = ""
+                if detail and hasattr(detail, "status_code"):
+                    info = f" status={detail.status_code}"
                 print(
-                    f"⚠️  Failure: {service_name} on {lang_code} sample {sample_idx} after {max_retries} attempts",
+                    f"⚠️ Failure: {service_name} on {lang_code} sample {sample_idx} after {max_retries} attempts{info}\n    Reason: {exc}",
                     flush=True,
                 )
                 end_time = time.time()
