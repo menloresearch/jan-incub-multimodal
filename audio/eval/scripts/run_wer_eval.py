@@ -8,7 +8,8 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -160,7 +161,7 @@ def load_environment(extra_env_files: Optional[Iterable[Path]]) -> None:
             load_dotenv(env_path, override=True)
 
 
-def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> List[str]:
+def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> list[str]:
     if args.languages_file:
         contents = args.languages_file.read_text(encoding="utf-8").splitlines()
         languages = [
@@ -182,10 +183,10 @@ def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> Lis
 
 def parse_service_overrides(
     overrides: Optional[Iterable[str]],
-) -> List[tuple[str, str]]:
+) -> list[tuple[str, str]]:
     if not overrides:
         return []
-    pairs: List[tuple[str, str]] = []
+    pairs: list[tuple[str, str]] = []
     for item in overrides:
         if ":" not in item:
             raise ValueError(

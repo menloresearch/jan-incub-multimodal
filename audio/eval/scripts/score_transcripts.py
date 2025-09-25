@@ -6,15 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import DefaultDict, Iterable, List, Tuple
 
 import evaluate
 
 WER_METRIC = evaluate.load("wer")
 CER_METRIC = evaluate.load("cer")
 
-TranscriptKey = Tuple[str, str]
+TranscriptKey = tuple[str, str]
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,11 +44,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_transcripts(path: Path) -> List[dict]:
+def read_transcripts(path: Path) -> list[dict]:
     if not path.exists():
         raise FileNotFoundError(f"Transcript file not found: {path}")
 
-    records: List[dict] = []
+    records: list[dict] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             text = line.strip()
@@ -65,11 +65,11 @@ def filter_records(
     records: Iterable[dict],
     languages: Iterable[str] | None,
     services: Iterable[str] | None,
-) -> List[dict]:
+) -> list[dict]:
     languages_set = set(languages) if languages else None
     services_set = set(services) if services else None
 
-    filtered: List[dict] = []
+    filtered: list[dict] = []
     for record in records:
         if languages_set and record.get("lang") not in languages_set:
             continue
@@ -82,18 +82,18 @@ def filter_records(
 def compute_error_rates(
     records: Iterable[dict], *, use_raw: bool = False
 ) -> tuple[dict, dict | None]:
-    grouped: DefaultDict[TranscriptKey, List[dict]] = defaultdict(list)
+    grouped: defaultdict[TranscriptKey, list[dict]] = defaultdict(list)
     for record in records:
         key = (record.get("lang", "unknown"), record.get("service", "unknown"))
         grouped[key].append(record)
 
     results = {}
-    overall_refs: List[str] = []
-    overall_preds: List[str] = []
+    overall_refs: list[str] = []
+    overall_preds: list[str] = []
 
     for key, group in grouped.items():
-        references: List[str] = []
-        predictions: List[str] = []
+        references: list[str] = []
+        predictions: list[str] = []
         failures = 0
 
         for item in group:

@@ -6,17 +6,10 @@ import concurrent.futures
 import json
 import logging
 import time
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-)
+from statistics import fmean
+from typing import Any, Optional
 
 import evaluate
 from tqdm.auto import tqdm
@@ -48,7 +41,7 @@ def _save_json(path: Path, payload: MutableMapping[str, Any]) -> None:
         json.dump(payload, handle, indent=2)
 
 
-def _record_transcript(path: Optional[Path], record: Dict[str, Any]) -> None:
+def _record_transcript(path: Optional[Path], record: dict[str, Any]) -> None:
     if not path:
         return
     _ensure_parent(path)
@@ -99,17 +92,36 @@ def _progress_iter(
     return iterable
 
 
-def _compute_wer(references: List[str], predictions: List[str]) -> float:
+def _compute_wer(references: list[str], predictions: list[str]) -> float:
     if not references or not predictions:
         return 1.0
     # The HF evaluate WER matches the OpenASR reference implementation
     return float(WER_METRIC.compute(references=references, predictions=predictions))
 
 
-def _compute_cer(references: List[str], predictions: List[str]) -> float:
+def _compute_cer(references: list[str], predictions: list[str]) -> float:
     if not references or not predictions:
         return 1.0
     return float(CER_METRIC.compute(references=references, predictions=predictions))
+
+
+def _summarize_metrics(
+    references: list[str], predictions: list[str], timings: list[float]
+) -> dict[str, Any]:
+    if not references or not predictions:
+        return {
+            "wer": 1.0,
+            "cer": 1.0,
+            "timing": 0.0,
+            "n_samples": len(predictions),
+        }
+
+    return {
+        "wer": _compute_wer(references, predictions),
+        "cer": _compute_cer(references, predictions),
+        "timing": fmean(timings) if timings else 0.0,
+        "n_samples": len(predictions),
+    }
 
 
 def _transcribe_with_retry(
@@ -121,10 +133,10 @@ def _transcribe_with_retry(
     logger: logging.Logger,
     lang_code: str,
     sample_idx: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     start_time = time.time()
 
-    for attempt in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         try:
             transcription = transcribe_func(audio_path, language)
             end_time = time.time()
@@ -137,13 +149,13 @@ def _transcribe_with_retry(
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Attempt %s failed for %s on %s sample %s: %s",
-                attempt + 1,
+                attempt,
                 service_name,
                 lang_code,
                 sample_idx,
                 exc,
             )
-            if attempt == max_retries - 1:
+            if attempt == max_retries:
                 logger.error(
                     "Failed to transcribe %s sample %s after %s attempts",
                     lang_code,
@@ -183,7 +195,7 @@ def run_wer_evaluation(
     normalizer_resolver: Optional[NormalizerResolver] = None,
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Run a sequential WER/CER evaluation across services."""
 
     log_path = Path(log_file)
@@ -200,7 +212,7 @@ def run_wer_evaluation(
     checkpoint = _load_json(checkpoint_path)
     completed_services = set(checkpoint.get("completed", []))
 
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     dump_path = Path(transcript_dump) if transcript_dump else None
 
@@ -225,7 +237,7 @@ def run_wer_evaluation(
             logger.warning("No samples found for %s", lang_code)
             continue
 
-        lang_results: Dict[str, Any] = {}
+        lang_results: dict[str, Any] = {}
 
         for service_name in services:
             if service_name not in service_funcs:
@@ -239,9 +251,9 @@ def run_wer_evaluation(
                 continue
 
             transcribe_func = service_funcs[service_name]
-            predictions: List[str] = []
-            references: List[str] = []
-            timings: List[float] = []
+            predictions: list[str] = []
+            references: list[str] = []
+            timings: list[float] = []
 
             rows = list(samples_df.iterrows())
             for idx, (_, row) in enumerate(
@@ -298,21 +310,9 @@ def run_wer_evaluation(
                         service_name,
                     )
 
-            if predictions and references:
-                wer = _compute_wer(references, predictions)
-                cer = _compute_cer(references, predictions)
-                avg_time = sum(timings) / len(timings)
-            else:
-                wer = 1.0
-                cer = 1.0
-                avg_time = 0.0
-
-            lang_results[service_name] = {
-                "wer": wer,
-                "cer": cer,
-                "timing": avg_time,
-                "n_samples": len(predictions),
-            }
+            lang_results[service_name] = _summarize_metrics(
+                references, predictions, timings
+            )
             completed_services.add(checkpoint_key)
 
             _save_json(checkpoint_path, {"completed": list(completed_services)})
@@ -342,7 +342,7 @@ def run_wer_evaluation_parallel(
     normalizer_resolver: Optional[NormalizerResolver] = None,
     show_progress: bool = False,
     transcript_dump: Optional[str] = None,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Run a WER/CER evaluation using parallel service calls per sample."""
 
     log_path = Path(log_file)
@@ -360,7 +360,7 @@ def run_wer_evaluation_parallel(
     completed_services = set(checkpoint.get("completed", []))
 
     existing_results = _load_json(results_path)
-    results: Dict[str, Dict[str, Any]] = (
+    results: dict[str, dict[str, Any]] = (
         {k: v for k, v in existing_results.items()} if existing_results else {}
     )
 
@@ -390,7 +390,7 @@ def run_wer_evaluation_parallel(
         services_to_process = [
             s for s in services if f"{lang_code}_{s}" not in completed_services
         ]
-        lang_results: Dict[str, Any] = results.get(lang_code, {})
+        lang_results: dict[str, Any] = results.get(lang_code, {})
 
         if not services_to_process:
             logger.info("All services already completed for %s", lang_code)
@@ -401,7 +401,7 @@ def run_wer_evaluation_parallel(
 
         all_predictions = {service: [] for service in services_to_process}
         all_timings = {service: [] for service in services_to_process}
-        all_references: List[str] = []
+        all_references: list[str] = []
 
         rows = list(samples_df.iterrows())
         for idx, (_, row) in enumerate(
@@ -469,21 +469,9 @@ def run_wer_evaluation_parallel(
             predictions = all_predictions[service_name]
             timings = all_timings[service_name]
 
-            if predictions and all_references:
-                wer = _compute_wer(all_references, predictions)
-                cer = _compute_cer(all_references, predictions)
-                avg_time = sum(timings) / len(timings)
-            else:
-                wer = 1.0
-                cer = 1.0
-                avg_time = 0.0
-
-            lang_results[service_name] = {
-                "wer": wer,
-                "cer": cer,
-                "timing": avg_time,
-                "n_samples": len(predictions),
-            }
+            lang_results[service_name] = _summarize_metrics(
+                all_references, predictions, timings
+            )
 
             completed_services.add(f"{lang_code}_{service_name}")
             _save_json(checkpoint_path, {"completed": list(completed_services)})
