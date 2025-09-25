@@ -8,11 +8,15 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+import sys
 
-import evaluate
+REPO_ROOT = Path(__file__).resolve().parents[3]
+AUDIO_EVAL_ROOT = REPO_ROOT / "audio" / "eval"
+for candidate in (REPO_ROOT, AUDIO_EVAL_ROOT):
+    if str(candidate) not in sys.path:
+        sys.path.append(str(candidate))
 
-WER_METRIC = evaluate.load("wer")
-CER_METRIC = evaluate.load("cer")
+from audio.eval.metrics import compute_cer, compute_wer  # noqa: E402
 
 TranscriptKey = tuple[str, str]
 
@@ -119,8 +123,8 @@ def compute_error_rates(
         if not references:
             continue
 
-        wer = float(WER_METRIC.compute(references=references, predictions=predictions))
-        cer = float(CER_METRIC.compute(references=references, predictions=predictions))
+        wer = compute_wer(references, predictions)
+        cer = compute_cer(references, predictions)
 
         results[key] = {
             "wer": wer,
@@ -135,12 +139,8 @@ def compute_error_rates(
     overall = None
     if overall_refs:
         overall = {
-            "wer": float(
-                WER_METRIC.compute(references=overall_refs, predictions=overall_preds)
-            ),
-            "cer": float(
-                CER_METRIC.compute(references=overall_refs, predictions=overall_preds)
-            ),
+            "wer": compute_wer(overall_refs, overall_preds),
+            "cer": compute_cer(overall_refs, overall_preds),
             "samples": len(overall_refs),
         }
 

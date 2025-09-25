@@ -8,20 +8,16 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from pathlib import Path
-from statistics import fmean
 from typing import Any, Optional
 
-import evaluate
 from tqdm.auto import tqdm
 
 from .common_voice_dataset import CommonVoiceDataset
+from .metrics import summarize_error_rates
 from .text_normalizer_utils import DEFAULT_NORMALIZER, Normalizer
 
 ServiceFuncMap = Mapping[str, Callable[[str, Optional[str]], str]]
 NormalizerResolver = Callable[[str], Normalizer]
-
-WER_METRIC = evaluate.load("wer")
-CER_METRIC = evaluate.load("cer")
 
 
 def _ensure_parent(path: Path) -> None:
@@ -90,38 +86,6 @@ def _progress_iter(
     if enabled and tqdm is not None:
         return tqdm(iterable, total=total, desc=desc)
     return iterable
-
-
-def _compute_wer(references: list[str], predictions: list[str]) -> float:
-    if not references or not predictions:
-        return 1.0
-    # The HF evaluate WER matches the OpenASR reference implementation
-    return float(WER_METRIC.compute(references=references, predictions=predictions))
-
-
-def _compute_cer(references: list[str], predictions: list[str]) -> float:
-    if not references or not predictions:
-        return 1.0
-    return float(CER_METRIC.compute(references=references, predictions=predictions))
-
-
-def _summarize_metrics(
-    references: list[str], predictions: list[str], timings: list[float]
-) -> dict[str, Any]:
-    if not references or not predictions:
-        return {
-            "wer": 1.0,
-            "cer": 1.0,
-            "timing": 0.0,
-            "n_samples": len(predictions),
-        }
-
-    return {
-        "wer": _compute_wer(references, predictions),
-        "cer": _compute_cer(references, predictions),
-        "timing": fmean(timings) if timings else 0.0,
-        "n_samples": len(predictions),
-    }
 
 
 def _transcribe_with_retry(
@@ -310,7 +274,7 @@ def run_wer_evaluation(
                         service_name,
                     )
 
-            lang_results[service_name] = _summarize_metrics(
+            lang_results[service_name] = summarize_error_rates(
                 references, predictions, timings
             )
             completed_services.add(checkpoint_key)
@@ -469,7 +433,7 @@ def run_wer_evaluation_parallel(
             predictions = all_predictions[service_name]
             timings = all_timings[service_name]
 
-            lang_results[service_name] = _summarize_metrics(
+            lang_results[service_name] = summarize_error_rates(
                 all_references, predictions, timings
             )
 

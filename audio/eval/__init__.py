@@ -15,6 +15,7 @@ from .text_normalizer_utils import (
     multilingual_normalizer,
 )
 from .error_rate_evaluator import run_wer_evaluation, run_wer_evaluation_parallel
+from .metrics import compute_cer, compute_wer, summarize_error_rates
 
 __all__ = [
     "CommonVoiceDataset",
@@ -29,4 +30,7 @@ __all__ = [
     "multilingual_normalizer",
     "run_wer_evaluation",
     "run_wer_evaluation_parallel",
+    "compute_cer",
+    "compute_wer",
+    "summarize_error_rates",
 ]
