@@ -1,4 +1,4 @@
-"""Utilities for running WER evaluations across multiple ASR services."""
+"""Utilities for running WER/CER evaluations across multiple ASR services."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _record_transcript(path: Optional[Path], record: Dict[str, Any]) -> None:
 
 def _setup_logger(log_file: Path) -> logging.Logger:
     _ensure_parent(log_file)
-    logger = logging.getLogger("wer_evaluator")
+    logger = logging.getLogger("error_rate_evaluator")
     logger.setLevel(logging.INFO)
 
     # Avoid attaching duplicate handlers when rerunning within notebooks.

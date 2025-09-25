@@ -29,7 +29,7 @@ python scripts/run_wer_eval.py \
 ```
 
 - Core logic lives in `asr_services.py`, `common_voice_dataset.py`, and
-  `wer_evaluator.py` for computing WER/CER across services.
+  `error_rate_evaluator.py` for computing WER/CER across services.
 - Example notebooks are under `notebooks/` for exploratory analysis.
 - Results, logs, and transcript dumps default to the project-level
   `results/` and `logs/` directories.

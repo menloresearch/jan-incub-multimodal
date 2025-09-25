@@ -53,8 +53,8 @@ scripts/serve_whisper.sh
   - `common_voice_dataset.py` handles dataset sampling (defaults to `test_100` split).
   - `asr_services.py` wraps each ASR provider.
   - `text_normalizer_utils.py` wires the multilingual normalizers.
-  - `wer_evaluator.py` coordinates transcription, logging, and WER scoring
-    (HF `evaluate` + optional `tqdm`).
+  - `error_rate_evaluator.py` coordinates transcription, logging, and error-rate
+    scoring (HF `evaluate` + optional `tqdm`).
 - CLI entry point: `scripts/run_wer_eval.py`
 - Quick service checks: `scripts/test_transcribe_vllm.py` and `scripts/test_transcribe_speechmatics.py`.
 

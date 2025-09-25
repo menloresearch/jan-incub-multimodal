@@ -14,7 +14,7 @@ from .text_normalizer_utils import (
     get_text_normalizer,
     multilingual_normalizer,
 )
-from .wer_evaluator import run_wer_evaluation, run_wer_evaluation_parallel
+from .error_rate_evaluator import run_wer_evaluation, run_wer_evaluation_parallel
 
 __all__ = [
     "CommonVoiceDataset",
