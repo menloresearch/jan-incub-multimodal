@@ -18,6 +18,11 @@ DEFAULT_MENLO_API_KEY = (
 )
 DEFAULT_VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://0.0.0.0:3349/v1")
 DEFAULT_VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
+DEFAULT_PARAKEET_BASE_URL = (
+    os.getenv("PARAKEET_BASE_URL")
+    or os.getenv("BASE_URL")
+    or "http://localhost:8010/v1"
+)
 
 ServiceFunction = Callable[[str, Optional[str]], str]
 ServiceModelSpec = Tuple[str, str]
@@ -114,6 +119,29 @@ def _extract_openai_text(payload) -> str:
     if isinstance(payload, dict) and "text" in payload:
         return payload["text"]
     return str(payload)
+
+
+def transcribe_parakeet(
+    audio_path: str, model: str = "parakeet-tdt-0.6b-v3", language: Optional[str] = None
+) -> str:
+    """Transcribe audio using a locally served Parakeet OpenAI-compatible endpoint."""
+    _suppress_logs("httpx", "openai", level=logging.WARNING)
+    try:
+        from openai import OpenAI
+    except ImportError as exc:  # pragma: no cover - dependency optional
+        raise RuntimeError(
+            "The openai package is required for Parakeet transcription"
+        ) from exc
+
+    client = OpenAI(base_url=DEFAULT_PARAKEET_BASE_URL)
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model=model,
+            file=audio_file,
+            response_format="text",
+            language=_normalize_iso2(language),
+        )
+    return _extract_openai_text(transcription)
 
 
 def transcribe_vllm(
@@ -297,6 +325,7 @@ def transcribe_gladia(audio_path: str, language: Optional[str] = None) -> str:
 
 DEFAULT_SERVICE_MODELS: Sequence[ServiceModelSpec] = (
     ("fasterwhisper", "whisper-large-v3"),
+    ("nvidia", "parakeet-tdt-0.6b-v3"),
     ("vllm", "openai/whisper-large-v3"),
     ("openai", "gpt-4o-transcribe"),
     ("openai", "gpt-4o-mini-transcribe"),
@@ -331,6 +360,12 @@ def build_service_function_map(
         elif service == "menlo":
             service_funcs[key] = (
                 lambda audio_path, lang, _model=model: transcribe_menlo(
+                    audio_path, model=_model, language=lang
+                )
+            )
+        elif service == "nvidia":
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_parakeet(
                     audio_path, model=_model, language=lang
                 )
             )
@@ -379,6 +414,7 @@ __all__ = [
     "ServiceFunction",
     "ServiceModelSpec",
     "transcribe_menlo",
+    "transcribe_parakeet",
     "transcribe_vllm",
     "transcribe_openai",
     "transcribe_groq",

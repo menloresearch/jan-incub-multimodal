@@ -30,6 +30,20 @@ python scripts/run_wer_eval.py \
 
 - Core logic lives in `asr_services.py`, `common_voice_dataset.py`, and
   `error_rate_evaluator.py` for computing WER/CER across services.
+- To serve the NVIDIA Parakeet ASR model locally with an OpenAI-compatible API:
+
+  ```bash
+  uv venv .venv
+  uv pip install --python .venv/bin/python -r requirements.txt
+
+  source .venv/bin/activate
+  python audio/eval/scripts/serve_parakeet_openai.py \
+    --host 0.0.0.0 \
+    --port 8010
+  ```
+
+  The server downloads `nvidia/parakeet-tdt-0.6b-v3` on first run. Point
+  `asr_services.py` at it by exporting `BASE_URL=http://localhost:8010/v1`.
 - Example notebooks are under `notebooks/` for exploratory analysis.
 - Results, logs, and transcript dumps default to the project-level
   `results/` and `logs/` directories.
