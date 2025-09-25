@@ -298,10 +298,17 @@ def main() -> int:
             cer = metrics.get("cer")
             timing = metrics.get("timing", 0.0)
             count = metrics.get("n_samples", 0)
+            failures = int(metrics.get("failures", 0))
             cer_summary = f", CER={cer:.4f}" if cer is not None else ""
+            failure_note = f", Failures={failures}" if failures else ""
+            status_icon = "⚠️" if failures else "✅"
             print(
-                f"  {service}: WER={wer:.4f}{cer_summary}, Avg Time={timing:.2f}s, Samples={count}"
+                f"  {status_icon} {service}: WER={wer:.4f}{cer_summary}, Avg Time={timing:.2f}s, Samples={count}{failure_note}"
             )
+            if failures:
+                print(
+                    f"    ⚠️  {failures} failed sample(s) detected for {service}; rerun or inspect transcripts."
+                )
 
     print(f"\nDone. Detailed results written to {results_path}")
     return 0

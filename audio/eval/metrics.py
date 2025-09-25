@@ -29,6 +29,8 @@ def summarize_error_rates(
     references: Sequence[str],
     predictions: Sequence[str],
     timings: Iterable[float] | None = None,
+    *,
+    failures: int = 0,
 ) -> Mapping[str, float | int]:
     """Compute aggregate WER/CER/timing statistics for a batch."""
     if not references or not predictions:
@@ -37,6 +39,7 @@ def summarize_error_rates(
             "cer": 1.0,
             "timing": 0.0,
             "n_samples": len(predictions),
+            "failures": failures,
         }
 
     timings_list = list(timings) if timings is not None else []
@@ -46,6 +49,7 @@ def summarize_error_rates(
         "cer": compute_cer(references, predictions),
         "timing": fmean(timings_list) if timings_list else 0.0,
         "n_samples": len(predictions),
+        "failures": failures,
     }
 
 

@@ -126,6 +126,10 @@ def _transcribe_with_retry(
                     sample_idx,
                     max_retries,
                 )
+                print(
+                    f"⚠️  Failure: {service_name} on {lang_code} sample {sample_idx} after {max_retries} attempts",
+                    flush=True,
+                )
                 end_time = time.time()
                 return {
                     "service": service_name,
@@ -218,6 +222,7 @@ def run_wer_evaluation(
             predictions: list[str] = []
             references: list[str] = []
             timings: list[float] = []
+            failures = 0
 
             rows = list(samples_df.iterrows())
             for idx, (_, row) in enumerate(
@@ -249,6 +254,8 @@ def run_wer_evaluation(
                     normalizer(transcription) if transcription else ""
                 )
                 predictions.append(normalized_prediction)
+                if not result.get("success", True):
+                    failures += 1
 
                 _record_transcript(
                     dump_path,
@@ -275,7 +282,7 @@ def run_wer_evaluation(
                     )
 
             lang_results[service_name] = summarize_error_rates(
-                references, predictions, timings
+                references, predictions, timings, failures=failures
             )
             completed_services.add(checkpoint_key)
 
@@ -365,6 +372,7 @@ def run_wer_evaluation_parallel(
 
         all_predictions = {service: [] for service in services_to_process}
         all_timings = {service: [] for service in services_to_process}
+        failure_counts = {service: 0 for service in services_to_process}
         all_references: list[str] = []
 
         rows = list(samples_df.iterrows())
@@ -409,6 +417,8 @@ def run_wer_evaluation_parallel(
                     )
                     all_predictions[service_name].append(normalized_transcription)
                     all_timings[service_name].append(result["timing"])
+                    if not result.get("success", True):
+                        failure_counts[service_name] += 1
 
                     _record_transcript(
                         dump_path,
@@ -434,7 +444,10 @@ def run_wer_evaluation_parallel(
             timings = all_timings[service_name]
 
             lang_results[service_name] = summarize_error_rates(
-                all_references, predictions, timings
+                all_references,
+                predictions,
+                timings,
+                failures=failure_counts[service_name],
             )
 
             completed_services.add(f"{lang_code}_{service_name}")
