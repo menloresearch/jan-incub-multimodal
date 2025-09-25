@@ -12,13 +12,15 @@ from typing import Iterable, List, Optional
 
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.append(str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+AUDIO_EVAL_ROOT = REPO_ROOT / "audio" / "eval"
+for candidate in (REPO_ROOT, AUDIO_EVAL_ROOT):
+    if str(candidate) not in sys.path:
+        sys.path.append(str(candidate))
 
-NOTEBOOKS_DIR = REPO_ROOT / "notebooks"
+NOTEBOOKS_DIR = AUDIO_EVAL_ROOT / "notebooks"
 
-from audio_eval import (  # noqa: E402
+from audio.eval import (  # noqa: E402
     DEFAULT_SERVICE_MODELS,
     DEFAULT_SERVICES,
     CommonVoiceDataset,
@@ -40,7 +42,9 @@ PRESET_LANGUAGE_SETS = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run WER evaluation across ASR services")
+    parser = argparse.ArgumentParser(
+        description="Run WER evaluation across ASR services"
+    )
     parser.add_argument(
         "--dataset-path",
         default=None,
@@ -159,7 +163,11 @@ def load_environment(extra_env_files: Optional[Iterable[Path]]) -> None:
 def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> List[str]:
     if args.languages_file:
         contents = args.languages_file.read_text(encoding="utf-8").splitlines()
-        languages = [line.strip() for line in contents if line.strip() and not line.strip().startswith("#")]
+        languages = [
+            line.strip()
+            for line in contents
+            if line.strip() and not line.strip().startswith("#")
+        ]
         if languages:
             return languages
     if args.languages:
@@ -172,13 +180,17 @@ def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> Lis
     return dataset.languages
 
 
-def parse_service_overrides(overrides: Optional[Iterable[str]]) -> List[tuple[str, str]]:
+def parse_service_overrides(
+    overrides: Optional[Iterable[str]],
+) -> List[tuple[str, str]]:
     if not overrides:
         return []
     pairs: List[tuple[str, str]] = []
     for item in overrides:
         if ":" not in item:
-            raise ValueError(f"Invalid service override '{item}' (expected SERVICE:MODEL)")
+            raise ValueError(
+                f"Invalid service override '{item}' (expected SERVICE:MODEL)"
+            )
         service, model = item.split(":", 1)
         if not service or not model:
             raise ValueError(f"Invalid service override '{item}'")
@@ -206,7 +218,9 @@ def main() -> int:
 
     dataset_root = args.dataset_path or os.getenv("CV22_PATH")
     if not dataset_root:
-        print("Error: dataset path not provided and $CV22_PATH not set", file=sys.stderr)
+        print(
+            "Error: dataset path not provided and $CV22_PATH not set", file=sys.stderr
+        )
         return 1
 
     dataset_root_path = Path(dataset_root).expanduser().resolve()
@@ -217,15 +231,23 @@ def main() -> int:
     service_funcs = resolve_services(args)
     services = list(service_funcs.keys())
 
-    dataset = CommonVoiceDataset(str(dataset_root_path), default_split=args.default_split)
+    dataset = CommonVoiceDataset(
+        str(dataset_root_path), default_split=args.default_split
+    )
     languages = read_languages(dataset, args)
     target_split = args.split or dataset.default_split
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = args.results or (DEFAULT_RESULTS_DIR / f"wer_results_{timestamp}.json")
-    checkpoint_path = args.checkpoint or (DEFAULT_CHECKPOINT_DIR / f"wer_checkpoint_{timestamp}.json")
+    results_path = args.results or (
+        DEFAULT_RESULTS_DIR / f"wer_results_{timestamp}.json"
+    )
+    checkpoint_path = args.checkpoint or (
+        DEFAULT_CHECKPOINT_DIR / f"wer_checkpoint_{timestamp}.json"
+    )
     log_path = args.log or (DEFAULT_LOGS_DIR / f"wer_eval_{timestamp}.log")
-    transcript_path = args.dump_transcripts or (DEFAULT_LOGS_DIR / f"transcripts_{timestamp}.jsonl")
+    transcript_path = args.dump_transcripts or (
+        DEFAULT_LOGS_DIR / f"transcripts_{timestamp}.jsonl"
+    )
 
     for path in (results_path, checkpoint_path, log_path, transcript_path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -274,7 +296,9 @@ def main() -> int:
             wer = metrics.get("wer", 1.0)
             timing = metrics.get("timing", 0.0)
             count = metrics.get("n_samples", 0)
-            print(f"  {service}: WER={wer:.4f}, Avg Time={timing:.2f}s, Samples={count}")
+            print(
+                f"  {service}: WER={wer:.4f}, Avg Time={timing:.2f}s, Samples={count}"
+            )
 
     print(f"\nDone. Detailed results written to {results_path}")
     return 0
