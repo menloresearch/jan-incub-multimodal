@@ -16,6 +16,7 @@ for candidate in (REPO_ROOT, AUDIO_EVAL_ROOT):
     if str(candidate) not in sys.path:
         sys.path.append(str(candidate))
 
+from audio.eval import get_text_normalizer  # noqa: E402
 from audio.eval.metrics import compute_cer, compute_wer  # noqa: E402
 
 TranscriptKey = tuple[str, str]
@@ -100,23 +101,36 @@ def compute_error_rates(
     overall_refs: list[str] = []
     overall_preds: list[str] = []
 
+    normalizer_cache: dict[str, callable] = {}
+
+    def normalize(lang: str, text: str) -> str:
+        if not text:
+            return ""
+        normalizer = normalizer_cache.get(lang)
+        if normalizer is None:
+            normalizer = get_text_normalizer(lang)
+            normalizer_cache[lang] = normalizer
+        return normalizer(text)
+
     for key, group in grouped.items():
         references: list[str] = []
         predictions: list[str] = []
         failures = 0
 
         for item in group:
-            ref_field = "reference" if use_raw else "normalized_reference"
-            hyp_field = "transcription" if use_raw else "normalized_transcription"
+            reference_raw = item.get("reference") or ""
+            prediction_raw = item.get("transcription") or ""
 
-            reference = item.get(ref_field) or ""
-            prediction = item.get(hyp_field) or ""
-
-            if not reference:
+            if not reference_raw:
                 continue
 
-            references.append(reference)
-            predictions.append(prediction)
+            if use_raw:
+                references.append(reference_raw)
+                predictions.append(prediction_raw)
+            else:
+                lang = item.get("lang", "unknown")
+                references.append(normalize(lang, reference_raw))
+                predictions.append(normalize(lang, prediction_raw))
             if not item.get("success", True):
                 failures += 1
 

@@ -35,5 +35,6 @@ python scripts/run_wer_eval.py \
   `results/` and `logs/` directories.
 - To recompute metrics offline from a transcript dump, run
   `python scripts/score_transcripts.py path/to/transcripts.jsonl`.
+  References and predictions are re-normalized per language before scoring.
   A summary is printed and saved alongside the input as
   `path/to/transcripts_summary.txt` (override with `--output`).
