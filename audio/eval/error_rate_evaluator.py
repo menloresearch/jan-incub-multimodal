@@ -19,14 +19,10 @@ from typing import (
 )
 
 import evaluate
+from tqdm.auto import tqdm
 
 from .common_voice_dataset import CommonVoiceDataset
 from .text_normalizer_utils import DEFAULT_NORMALIZER, Normalizer
-
-try:  # Optional progress bar support
-    from tqdm.auto import tqdm
-except ImportError:  # pragma: no cover - tqdm is optional
-    tqdm = None
 
 ServiceFuncMap = Mapping[str, Callable[[str, Optional[str]], str]]
 NormalizerResolver = Callable[[str], Normalizer]
