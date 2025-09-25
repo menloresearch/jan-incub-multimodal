@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use raw reference/transcription text instead of normalized fields",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path for the summary output (default: alongside input)",
+    )
     return parser.parse_args()
 
 
@@ -142,26 +147,29 @@ def compute_error_rates(
     return results, overall
 
 
-def print_results(results: dict, overall: dict | None) -> None:
+def format_results(results: dict, overall: dict | None) -> str:
     if not results:
-        print("No matching transcript entries found.")
-        return
+        return "No matching transcript entries found."
 
-    print("=== Transcript Error Rates ===")
+    lines = ["=== Transcript Error Rates ==="]
     for (language, service), metrics in sorted(results.items()):
         wer = metrics["wer"] * 100
         cer = metrics["cer"] * 100
         samples = metrics["samples"]
         failures = metrics["failures"]
         failure_note = f", failures={failures}" if failures else ""
-        print(
+        lines.append(
             f"{language} | {service}: WER={wer:.2f}% CER={cer:.2f}% samples={samples}{failure_note}"
         )
     if overall:
-        print("\n---")
-        print(
-            f"Overall: WER={overall['wer'] * 100:.2f}% CER={overall['cer'] * 100:.2f}% samples={overall['samples']}"
+        lines.extend(
+            [
+                "",
+                "---",
+                f"Overall: WER={overall['wer'] * 100:.2f}% CER={overall['cer'] * 100:.2f}% samples={overall['samples']}",
+            ]
         )
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -169,7 +177,16 @@ def main() -> int:
     records = read_transcripts(args.transcripts)
     filtered = filter_records(records, args.languages, args.services)
     results, overall = compute_error_rates(filtered, use_raw=args.use_raw)
-    print_results(results, overall)
+    summary = format_results(results, overall)
+    print(summary)
+
+    output_path = args.output
+    if not output_path:
+        output_name = f"{args.transcripts.stem}_summary.txt"
+        output_path = args.transcripts.with_name(output_name)
+
+    output_path.write_text(summary + "\n", encoding="utf-8")
+    print(f"\nSaved summary to {output_path}")
     return 0
 
 
