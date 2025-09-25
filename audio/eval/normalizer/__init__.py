@@ -1,1 +1,11 @@
-from .normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+from .normalizer import (
+    BasicMultilingualTextNormalizer,
+    BasicTextNormalizer,
+    EnglishTextNormalizer,
+)
+
+__all__ = [
+    "BasicMultilingualTextNormalizer",
+    "BasicTextNormalizer",
+    "EnglishTextNormalizer",
+]
