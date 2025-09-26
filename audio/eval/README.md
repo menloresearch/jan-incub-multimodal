@@ -72,5 +72,22 @@ Bold indicates the lowest error rate per language.
 | openai_whisper-1               | 7.12%     | 7.93%     | 5.39%     | 11.73%    | 6.87%     | 15.15%        | 6.06%     | 5.41%     | 4.57%     | 29.35%        |
 | speechmatics                   | 6.24%     | 9.02%     | 2.95%     | 9.71%     | 3.18%     | 16.01%        | 3.10%     | 4.79%     | 6.42%     | 17.10%        |
 | vllm_openai-whisper-large-v3   | 6.57%     | 8.03%     | 3.97%     | 11.43%    | 5.77%     | 14.95%        | 5.80%     | 5.10%     | 3.70%     | 15.26%        |
+<!-- markdownlint-enable MD013 -->
 
+Average per-sample inference time (seconds).
+
+<!-- markdownlint-disable MD013 -->
+| Service | de | en | es | fr | it | ja | pl | pt | ru | zh-CN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| elevenlabs_scribe_v1 | 0.96s | 0.95s | 0.84s | 1.07s | 0.85s | 0.74s | 0.80s | 0.71s | 0.81s | 0.81s |
+| gladia | 6.08s | 7.09s | 5.92s | 6.71s | 6.24s | 5.71s | 6.07s | 7.04s | 7.78s | 7.35s |
+| groq_whisper-large-v3 | 0.40s | 0.37s | 0.45s | 0.74s | 0.40s | 0.89s | 0.62s | 0.66s | 0.54s | 0.77s |
+| groq_whisper-large-v3-turbo | 0.34s | 0.31s | 0.36s | 1.10s | 0.32s | 0.92s | 0.57s | 0.55s | 0.50s | 1.09s |
+| fasterwhisper_whisper-large-v3 | 0.48s | 0.43s | 0.46s | 0.47s | 0.49s | 0.46s | 0.49s | 0.42s | 0.49s | 0.53s |
+| nvidia_parakeet-tdt-0.6b-v3 | **0.08s** | **0.08s** | **0.08s** | **0.07s** | **0.08s** | not supported | **0.08s** | **0.06s** | **0.09s** | not supported |
+| openai_gpt-4o-mini-transcribe | 1.06s | 1.05s | 1.08s | 1.14s | 1.07s | 1.07s | 1.12s | 1.07s | 1.02s | 1.19s |
+| openai_gpt-4o-transcribe | 1.14s | 1.14s | 1.15s | 1.10s | 1.30s | 1.18s | 1.19s | 1.16s | 1.15s | 1.21s |
+| openai_whisper-1 | 1.58s | 1.61s | 1.43s | 1.42s | 1.59s | 1.39s | 1.39s | 1.28s | 1.46s | 1.40s |
+| speechmatics | 19.73s | 3.02s | 3.00s | 19.24s | 19.67s | 19.11s | 20.86s | 19.03s | 19.11s | 20.46s |
+| vllm_openai-whisper-large-v3 | 0.37s | 0.31s | 0.35s | 0.37s | 0.36s | **0.34s** | 0.37s | 0.33s | 0.36s | **0.40s** |
 <!-- markdownlint-enable MD013 -->
