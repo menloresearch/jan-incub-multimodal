@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""CLI to run Common Voice WER evaluations outside the notebook."""
+"""CLI to run Common Voice WER/CER evaluations outside the notebook."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Optional
 
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.append(str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+AUDIO_EVAL_ROOT = REPO_ROOT / "audio" / "eval"
+for candidate in (REPO_ROOT, AUDIO_EVAL_ROOT):
+    if str(candidate) not in sys.path:
+        sys.path.append(str(candidate))
 
-NOTEBOOKS_DIR = REPO_ROOT / "notebooks"
+NOTEBOOKS_DIR = AUDIO_EVAL_ROOT / "notebooks"
 
-from audio_eval import (  # noqa: E402
+from audio.eval import (  # noqa: E402
     DEFAULT_SERVICE_MODELS,
     DEFAULT_SERVICES,
     CommonVoiceDataset,
@@ -40,7 +45,9 @@ PRESET_LANGUAGE_SETS = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run WER evaluation across ASR services")
+    parser = argparse.ArgumentParser(
+        description="Run WER/CER evaluation across ASR services"
+    )
     parser.add_argument(
         "--dataset-path",
         default=None,
@@ -143,6 +150,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="JSONL file to store raw and normalized transcripts (default: logs/transcripts_<timestamp>.jsonl)",
     )
+    parser.add_argument(
+        "--retry-transcripts",
+        type=Path,
+        help="Existing transcript JSONL to reuse successes from (outputs written to new file)",
+    )
     return parser.parse_args()
 
 
@@ -156,10 +168,14 @@ def load_environment(extra_env_files: Optional[Iterable[Path]]) -> None:
             load_dotenv(env_path, override=True)
 
 
-def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> List[str]:
+def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> list[str]:
     if args.languages_file:
         contents = args.languages_file.read_text(encoding="utf-8").splitlines()
-        languages = [line.strip() for line in contents if line.strip() and not line.strip().startswith("#")]
+        languages = [
+            line.strip()
+            for line in contents
+            if line.strip() and not line.strip().startswith("#")
+        ]
         if languages:
             return languages
     if args.languages:
@@ -172,13 +188,17 @@ def read_languages(dataset: CommonVoiceDataset, args: argparse.Namespace) -> Lis
     return dataset.languages
 
 
-def parse_service_overrides(overrides: Optional[Iterable[str]]) -> List[tuple[str, str]]:
+def parse_service_overrides(
+    overrides: Optional[Iterable[str]],
+) -> list[tuple[str, str]]:
     if not overrides:
         return []
-    pairs: List[tuple[str, str]] = []
+    pairs: list[tuple[str, str]] = []
     for item in overrides:
         if ":" not in item:
-            raise ValueError(f"Invalid service override '{item}' (expected SERVICE:MODEL)")
+            raise ValueError(
+                f"Invalid service override '{item}' (expected SERVICE:MODEL)"
+            )
         service, model = item.split(":", 1)
         if not service or not model:
             raise ValueError(f"Invalid service override '{item}'")
@@ -200,13 +220,47 @@ def resolve_services(args: argparse.Namespace) -> dict[str, callable]:
     return service_funcs
 
 
+def load_transcripts(path: Path) -> list[dict]:
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                records.append(json.loads(text))
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON on line {line_number} in {path}: {text}"
+                ) from exc
+    return records
+
+
+def build_success_map(
+    records: Iterable[dict],
+) -> dict[tuple[str, str], dict[int, dict]]:
+    success_map: dict[tuple[str, str], dict[int, dict]] = defaultdict(dict)
+    for record in records:
+        if not record.get("success", True):
+            continue
+        lang = record.get("lang")
+        service = record.get("service")
+        sample_index = record.get("sample_index")
+        if lang is None or service is None or sample_index is None:
+            continue
+        success_map[(lang, service)][int(sample_index)] = record
+    return success_map
+
+
 def main() -> int:
     args = parse_args()
     load_environment(args.env_file)
 
     dataset_root = args.dataset_path or os.getenv("CV22_PATH")
     if not dataset_root:
-        print("Error: dataset path not provided and $CV22_PATH not set", file=sys.stderr)
+        print(
+            "Error: dataset path not provided and $CV22_PATH not set", file=sys.stderr
+        )
         return 1
 
     dataset_root_path = Path(dataset_root).expanduser().resolve()
@@ -217,15 +271,32 @@ def main() -> int:
     service_funcs = resolve_services(args)
     services = list(service_funcs.keys())
 
-    dataset = CommonVoiceDataset(str(dataset_root_path), default_split=args.default_split)
+    dataset = CommonVoiceDataset(
+        str(dataset_root_path), default_split=args.default_split
+    )
     languages = read_languages(dataset, args)
     target_split = args.split or dataset.default_split
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = args.results or (DEFAULT_RESULTS_DIR / f"wer_results_{timestamp}.json")
-    checkpoint_path = args.checkpoint or (DEFAULT_CHECKPOINT_DIR / f"wer_checkpoint_{timestamp}.json")
+    results_path = args.results or (
+        DEFAULT_RESULTS_DIR / f"wer_results_{timestamp}.json"
+    )
+    checkpoint_path = args.checkpoint or (
+        DEFAULT_CHECKPOINT_DIR / f"wer_checkpoint_{timestamp}.json"
+    )
     log_path = args.log or (DEFAULT_LOGS_DIR / f"wer_eval_{timestamp}.log")
-    transcript_path = args.dump_transcripts or (DEFAULT_LOGS_DIR / f"transcripts_{timestamp}.jsonl")
+    transcript_path = args.dump_transcripts or (
+        DEFAULT_LOGS_DIR / f"transcripts_{timestamp}.jsonl"
+    )
+
+    success_map = None
+    if args.retry_transcripts:
+        retry_records = load_transcripts(args.retry_transcripts)
+        success_map = build_success_map(retry_records)
+        if not args.dump_transcripts:
+            transcript_path = args.retry_transcripts.with_name(
+                f"{args.retry_transcripts.stem}_retry_{timestamp}.jsonl"
+            )
 
     for path in (results_path, checkpoint_path, log_path, transcript_path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -245,6 +316,7 @@ def main() -> int:
         normalizer_resolver=get_text_normalizer,
         transcript_dump=str(transcript_path),
         show_progress=args.show_progress,
+        success_records=success_map,
     )
 
     print("=== Evaluation Configuration ===")
@@ -272,9 +344,20 @@ def main() -> int:
         print(f"{lang}:")
         for service, metrics in lang_results.items():
             wer = metrics.get("wer", 1.0)
+            cer = metrics.get("cer")
             timing = metrics.get("timing", 0.0)
             count = metrics.get("n_samples", 0)
-            print(f"  {service}: WER={wer:.4f}, Avg Time={timing:.2f}s, Samples={count}")
+            failures = int(metrics.get("failures", 0))
+            cer_summary = f", CER={cer:.4f}" if cer is not None else ""
+            failure_note = f", Failures={failures}" if failures else ""
+            status_icon = "⚠️" if failures else "✅"
+            print(
+                f"  {status_icon} {service}: WER={wer:.4f}{cer_summary}, Avg Time={timing:.2f}s, Samples={count}{failure_note}"
+            )
+            if failures:
+                print(
+                    f"    ⚠️  {failures} failed sample(s) detected for {service}; rerun or inspect transcripts."
+                )
 
     print(f"\nDone. Detailed results written to {results_path}")
     return 0

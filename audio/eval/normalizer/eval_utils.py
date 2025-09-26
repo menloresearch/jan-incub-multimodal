@@ -144,6 +144,7 @@ def score_results(directory: str, model_id: str = None):
     # Compute WER results per dataset, and RTFx over all datasets
     results = {}
     wer_metric = evaluate.load("wer")
+    cer_metric = evaluate.load("cer")
 
     for result_file in result_files:
         manifest = read_manifest(result_file)
@@ -158,6 +159,8 @@ def score_results(directory: str, model_id: str = None):
 
         wer = wer_metric.compute(references=references, predictions=predictions)
         wer = round(100 * wer, 2)
+        cer = cer_metric.compute(references=references, predictions=predictions)
+        cer = round(100 * cer, 2)
 
         if compute_rtfx:
             audio_length = sum(duration)
@@ -167,26 +170,34 @@ def score_results(directory: str, model_id: str = None):
             audio_length = inference_time = rtfx = None
 
         result_key = f"{model_id_of_file} | {dataset_id}"
-        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx}
+        results[result_key] = {
+            "wer": wer,
+            "cer": cer,
+            "audio_length": audio_length,
+            "inference_time": inference_time,
+            "rtfx": rtfx,
+        }
 
     print("*" * 80)
     print("Results per dataset:")
     print("*" * 80)
 
     for k, v in results.items():
-        metrics = f"{k}: WER = {v['wer']:0.2f} %"
+        metrics = f"{k}: WER = {v['wer']:0.2f} %, CER = {v['cer']:0.2f} %"
         if v["rtfx"] is not None:
             metrics += f", RTFx = {v['rtfx']:0.2f}"
         print(metrics)
 
     # composite WER should be computed over all datasets and with the same key
     composite_wer = defaultdict(float)
+    composite_cer = defaultdict(float)
     composite_audio_length = defaultdict(float)
     composite_inference_time = defaultdict(float)
     count_entries = defaultdict(int)
     for k, v in results.items():
         key = k.split("|")[0].strip()
         composite_wer[key] += v["wer"]
+        composite_cer[key] += v["cer"]
         if v["rtfx"] is not None:
             composite_audio_length[key] += v["audio_length"]
             composite_inference_time[key] += v["inference_time"]
@@ -201,7 +212,8 @@ def score_results(directory: str, model_id: str = None):
     print("*" * 80)
     for k, v in composite_wer.items():
         wer = v / count_entries[k]
-        print(f"{k}: WER = {wer:0.2f} %")
+        cer = composite_cer[k] / count_entries[k]
+        print(f"{k}: WER = {wer:0.2f} %, CER = {cer:0.2f} %")
     for k in composite_audio_length:
         if composite_audio_length[k] is not None:
             rtfx = composite_audio_length[k] / composite_inference_time[k]

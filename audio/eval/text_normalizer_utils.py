@@ -5,12 +5,17 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Callable
 
-from .normalizer import BasicMultilingualTextNormalizer, EnglishTextNormalizer
+from .normalizer import (
+    BasicMultilingualTextNormalizer,
+    BasicTextNormalizer,
+    EnglishTextNormalizer,
+)
 
 Normalizer = Callable[[str], str]
 
 english_normalizer = EnglishTextNormalizer()
 multilingual_normalizer = BasicMultilingualTextNormalizer()
+basic_text_normalizer = BasicTextNormalizer(split_letters=True)
 DEFAULT_NORMALIZER: Normalizer = english_normalizer
 
 
@@ -23,6 +28,8 @@ def get_text_normalizer(lang_code: str) -> Normalizer:
     normalized_code = lang_code.lower()
     if normalized_code in {"en", "eng", "english"}:
         return english_normalizer
+    if normalized_code in {"ja", "jpn", "japanese", "zh", "zho", "cmn", "chinese"}:
+        return basic_text_normalizer
     return multilingual_normalizer
 
 
@@ -31,5 +38,6 @@ __all__ = [
     "DEFAULT_NORMALIZER",
     "english_normalizer",
     "multilingual_normalizer",
+    "basic_text_normalizer",
     "get_text_normalizer",
 ]

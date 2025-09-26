@@ -6,13 +6,23 @@ import json
 import logging
 import os
 import time
-from functools import partial
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-DEFAULT_MENLO_BASE_URL = os.getenv("MENLO_BASE_URL", "http://localhost:8000/v1")
-DEFAULT_MENLO_API_KEY = os.getenv("MENLO_API_KEY", "dummy")
+DEFAULT_MENLO_BASE_URL = (
+    os.getenv("MENLO_BASE_URL")
+    or os.getenv("FASTERWHISPER_BASE_URL")
+    or "http://localhost:8000/v1"
+)
+DEFAULT_MENLO_API_KEY = (
+    os.getenv("MENLO_API_KEY") or os.getenv("FASTERWHISPER_API_KEY") or "dummy"
+)
 DEFAULT_VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://0.0.0.0:3349/v1")
 DEFAULT_VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
+DEFAULT_PARAKEET_BASE_URL = (
+    os.getenv("PARAKEET_BASE_URL")
+    or os.getenv("BASE_URL")
+    or "http://localhost:8010/v1"
+)
 
 ServiceFunction = Callable[[str, Optional[str]], str]
 ServiceModelSpec = Tuple[str, str]
@@ -76,13 +86,17 @@ def _suppress_logs(*names: str, level: int = logging.WARNING) -> None:
         logging.getLogger(name).setLevel(level)
 
 
-def transcribe_menlo(audio_path: str, model: str = "large-v3", language: Optional[str] = None) -> str:
+def transcribe_menlo(
+    audio_path: str, model: str = "large-v3", language: Optional[str] = None
+) -> str:
     """Transcribe audio using a Menlo-hosted OpenAI-compatible endpoint."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
         from openai import OpenAI
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The openai package is required for Menlo transcription") from exc
+        raise RuntimeError(
+            "The openai package is required for Menlo transcription"
+        ) from exc
 
     client = OpenAI(base_url=DEFAULT_MENLO_BASE_URL, api_key=DEFAULT_MENLO_API_KEY)
     with open(audio_path, "rb") as audio_file:
@@ -107,13 +121,40 @@ def _extract_openai_text(payload) -> str:
     return str(payload)
 
 
-def transcribe_vllm(audio_path: str, model: str = "large-v3", language: Optional[str] = None) -> str:
+def transcribe_parakeet(
+    audio_path: str, model: str = "parakeet-tdt-0.6b-v3", language: Optional[str] = None
+) -> str:
+    """Transcribe audio using a locally served Parakeet OpenAI-compatible endpoint."""
+    _suppress_logs("httpx", "openai", level=logging.WARNING)
+    try:
+        from openai import OpenAI
+    except ImportError as exc:  # pragma: no cover - dependency optional
+        raise RuntimeError(
+            "The openai package is required for Parakeet transcription"
+        ) from exc
+
+    client = OpenAI(base_url=DEFAULT_PARAKEET_BASE_URL)
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model=model,
+            file=audio_file,
+            response_format="text",
+            language=_normalize_iso2(language),
+        )
+    return _extract_openai_text(transcription)
+
+
+def transcribe_vllm(
+    audio_path: str, model: str = "large-v3", language: Optional[str] = None
+) -> str:
     """Transcribe audio using a local vLLM Whisper service."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
         from openai import OpenAI
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The openai package is required for vLLM transcription") from exc
+        raise RuntimeError(
+            "The openai package is required for vLLM transcription"
+        ) from exc
 
     client = OpenAI(base_url=DEFAULT_VLLM_BASE_URL, api_key=DEFAULT_VLLM_API_KEY)
     with open(audio_path, "rb") as audio_file:
@@ -126,13 +167,17 @@ def transcribe_vllm(audio_path: str, model: str = "large-v3", language: Optional
     return _extract_openai_text(transcription)
 
 
-def transcribe_openai(audio_path: str, model: str = "gpt-4o-transcribe", language: Optional[str] = None) -> str:
+def transcribe_openai(
+    audio_path: str, model: str = "gpt-4o-transcribe", language: Optional[str] = None
+) -> str:
     """Transcribe audio using OpenAI's hosted models."""
     _suppress_logs("httpx", "openai", level=logging.WARNING)
     try:
         from openai import OpenAI
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The openai package is required for OpenAI transcription") from exc
+        raise RuntimeError(
+            "The openai package is required for OpenAI transcription"
+        ) from exc
 
     client = OpenAI()
     with open(audio_path, "rb") as audio_file:
@@ -144,13 +189,19 @@ def transcribe_openai(audio_path: str, model: str = "gpt-4o-transcribe", languag
     return transcription.text
 
 
-def transcribe_groq(audio_path: str, model: str = "whisper-large-v3-turbo", language: Optional[str] = None) -> str:
+def transcribe_groq(
+    audio_path: str,
+    model: str = "whisper-large-v3-turbo",
+    language: Optional[str] = None,
+) -> str:
     """Transcribe audio using Groq's Whisper endpoints."""
     _suppress_logs("httpx", "urllib3", "requests", "groq", level=logging.ERROR)
     try:
         from groq import Groq
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The groq package is required for Groq transcription") from exc
+        raise RuntimeError(
+            "The groq package is required for Groq transcription"
+        ) from exc
 
     client = Groq()
     with open(audio_path, "rb") as file_handle:
@@ -163,13 +214,17 @@ def transcribe_groq(audio_path: str, model: str = "whisper-large-v3-turbo", lang
     return transcription.text
 
 
-def transcribe_elevenlabs(audio_path: str, model_id: str = "scribe_v1", language: Optional[str] = None) -> str:
+def transcribe_elevenlabs(
+    audio_path: str, model_id: str = "scribe_v1", language: Optional[str] = None
+) -> str:
     """Transcribe audio using ElevenLabs."""
     _suppress_logs("httpx", "elevenlabs", level=logging.WARNING)
     try:
         from elevenlabs import ElevenLabs
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The elevenlabs package is required for ElevenLabs transcription") from exc
+        raise RuntimeError(
+            "The elevenlabs package is required for ElevenLabs transcription"
+        ) from exc
 
     client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     with open(audio_path, "rb") as audio_file:
@@ -192,7 +247,9 @@ def transcribe_speechmatics(audio_path: str, language: str = "en") -> str:
         from speechmatics.batch_client import BatchClient
         from speechmatics.models import BatchTranscriptionConfig, ConnectionSettings
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The speechmatics package is required for Speechmatics transcription") from exc
+        raise RuntimeError(
+            "The speechmatics package is required for Speechmatics transcription"
+        ) from exc
 
     settings = ConnectionSettings(
         url="https://asr.api.speechmatics.com/v2",
@@ -227,7 +284,9 @@ def transcribe_gladia(audio_path: str, language: Optional[str] = None) -> str:
     try:
         import requests
     except ImportError as exc:  # pragma: no cover - dependency optional
-        raise RuntimeError("The requests package is required for Gladia transcription") from exc
+        raise RuntimeError(
+            "The requests package is required for Gladia transcription"
+        ) from exc
 
     api_key = os.getenv("GLADIA_API_KEY")
     headers = {"x-gladia-key": api_key}
@@ -265,7 +324,8 @@ def transcribe_gladia(audio_path: str, language: Optional[str] = None) -> str:
 
 
 DEFAULT_SERVICE_MODELS: Sequence[ServiceModelSpec] = (
-    ("menlo", "large-v3"),
+    ("fasterwhisper", "whisper-large-v3"),
+    ("nvidia", "parakeet-tdt-0.6b-v3"),
     ("vllm", "openai/whisper-large-v3"),
     ("openai", "gpt-4o-transcribe"),
     ("openai", "gpt-4o-mini-transcribe"),
@@ -278,7 +338,9 @@ DEFAULT_SERVICE_MODELS: Sequence[ServiceModelSpec] = (
 )
 
 
-def build_service_function_map(service_models: Iterable[ServiceModelSpec]) -> Dict[str, ServiceFunction]:
+def build_service_function_map(
+    service_models: Iterable[ServiceModelSpec],
+) -> Dict[str, ServiceFunction]:
     """Return a mapping of service identifiers to callable transcription functions."""
     service_funcs: Dict[str, ServiceFunction] = {}
     for service, model in service_models:
@@ -289,38 +351,62 @@ def build_service_function_map(service_models: Iterable[ServiceModelSpec]) -> Di
         elif service == "speechmatics":
             key = f"{service}_{safe_model}"
 
-        if service == "menlo":
-            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_menlo(
-                audio_path, model=_model, language=lang
+        if service == "fasterwhisper":
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_menlo(
+                    audio_path, model=_model, language=lang
+                )
+            )
+        elif service == "menlo":
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_menlo(
+                    audio_path, model=_model, language=lang
+                )
+            )
+        elif service == "nvidia":
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_parakeet(
+                    audio_path, model=_model, language=lang
+                )
             )
         elif service == "vllm":
             service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_vllm(
                 audio_path, model=_model, language=lang
             )
         elif service == "openai":
-            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_openai(
-                audio_path, model=_model, language=lang
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_openai(
+                    audio_path, model=_model, language=lang
+                )
             )
         elif service == "groq":
             service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_groq(
                 audio_path, model=_model, language=lang
             )
         elif service == "elevenlabs":
-            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_elevenlabs(
-                audio_path, model_id=_model, language=lang
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_elevenlabs(
+                    audio_path, model_id=_model, language=lang
+                )
             )
         elif service == "speechmatics":
-            service_funcs[key] = lambda audio_path, lang, _model=model: transcribe_speechmatics(
-                audio_path, language=lang or _model
+            service_funcs[key] = (
+                lambda audio_path, lang, _model=model: transcribe_speechmatics(
+                    audio_path, language=lang or _model
+                )
             )
         elif service == "gladia":
-            service_funcs[key] = lambda audio_path, lang: transcribe_gladia(audio_path, language=lang)
+            service_funcs[key] = lambda audio_path, lang: transcribe_gladia(
+                audio_path, language=lang
+            )
         else:  # pragma: no cover - defensive branch
             raise ValueError(f"Unsupported service '{service}'")
     return service_funcs
 
 
-DEFAULT_SERVICE_FUNCTIONS: Dict[str, ServiceFunction] = build_service_function_map(DEFAULT_SERVICE_MODELS)
+DEFAULT_SERVICE_FUNCTIONS: Dict[str, ServiceFunction] = build_service_function_map(
+    DEFAULT_SERVICE_MODELS
+)
 DEFAULT_SERVICES: List[str] = list(DEFAULT_SERVICE_FUNCTIONS.keys())
 
 
@@ -328,6 +414,7 @@ __all__ = [
     "ServiceFunction",
     "ServiceModelSpec",
     "transcribe_menlo",
+    "transcribe_parakeet",
     "transcribe_vllm",
     "transcribe_openai",
     "transcribe_groq",
